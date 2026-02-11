@@ -24,9 +24,15 @@ public class ArithmeticUtility {
 
     public double exponent(double o1, int n) {
         double result = 1.0;
-        for(int i = 0; i < n; i++) {
+
+        for(int i = 0; i < Math.abs(n); i++) {
             result *= o1;
         }
+
+        if (n < 0) {
+            return 1.0 / result;
+        }
+
         return result;
     }
 }
