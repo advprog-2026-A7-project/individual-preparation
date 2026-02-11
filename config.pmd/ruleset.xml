@@ -8,7 +8,6 @@
     <exclude-pattern>(^|.*/)src/test/.*</exclude-pattern>
     <exclude-pattern>(^|.*/)build/.*</exclude-pattern>
 
-    <!-- Best practices -->
     <rule ref="category/java/bestpractices.xml/UnusedImports" />
     <rule ref="category/java/bestpractices.xml/UnusedLocalVariable" />
     <rule ref="category/java/bestpractices.xml/UnusedPrivateField" />
@@ -18,7 +17,6 @@
     <rule ref="category/java/bestpractices.xml/UseTryWithResources" />
     <rule ref="category/java/bestpractices.xml/AvoidPrintStackTrace" />
 
-    <!-- Error-prone -->
     <rule ref="category/java/errorprone.xml/UseEqualsToCompareStrings" />
     <rule ref="category/java/errorprone.xml/CompareObjectsWithEquals" />
     <rule ref="category/java/errorprone.xml/AvoidCatchingNPE" />
