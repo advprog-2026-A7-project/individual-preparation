@@ -25,7 +25,10 @@ public class ArithmeticUtility {
     }
 
     public double exponent(double o1, int n) {
-        // TODO: Implement me properly!
-        return 0.0;
+        double result = 1.0;
+        for(int i = 0; i < n; i++) {
+            result *= o1;
+        }
+        return result;
     }
 }
