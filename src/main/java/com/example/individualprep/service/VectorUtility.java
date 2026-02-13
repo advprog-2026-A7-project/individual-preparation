@@ -3,7 +3,7 @@ package com.example.individualprep.service;
 import org.springframework.stereotype.Service;
 
 @Service
-public class VectorUtility {
+class VectorUtility {
     
     public double[] add(double[] v1, double[] v2) {
         if (v1 == null || v2 == null) {
@@ -75,4 +75,5 @@ public class VectorUtility {
 
         return Math.sqrt(sumOfSquares);
     }
+
 }
