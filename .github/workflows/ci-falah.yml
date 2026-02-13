@@ -1,124 +1,103 @@
-name: CI-Falah
+name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
-    branches: ["main"]
+    branches: [main]
 
 permissions:
   contents: read
-  pull-requests: write
-  checks: write       
-  statuses: write
+  pull-requests: read
 
 jobs:
-  verification:
+  build-test-lint-sonar:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Java Development Kit
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
+          distribution: temurin
           java-version: "21"
-          cache: "gradle"
+          cache: gradle
 
-      - name: Grant Execute Permissions for Gradlew
+      - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build and Analyze
-        run: ./gradlew clean check --no-daemon
+      - name: Test + Lint (PMD)
+        run: ./gradlew --no-daemon clean check
 
-      - name: Prepare Sonar Analysis
-        run: ./gradlew copySonarLibraries copySonarTestLibraries --no-daemon
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            build/reports
+            build/test-results
 
-      - name: Run SonarCloud Analysis
+      - name: Prepare Sonar libraries
+        run: ./gradlew --no-daemon copySonarLibraries copySonarTestLibraries
+
+      - name: SonarCloud Scan
         if: ${{ env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarcloud-github-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Archive Test Reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: verification-reports
-          path: |
-            build/reports
-            build/test-results
-
-      - name: Validate Quality Gate
+      - name: Fail if SonarCloud Quality Gate fails
         if: ${{ env.SONAR_TOKEN != '' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        shell: bash
         run: |
-          python3 -c '
-          import os, time, json, base64, urllib.request
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, os, time, urllib.request
 
-          MAX_RETRIES = 60
-          SLEEP_TIME = 5
-          METADATA_FILE = ".scannerwork/report-task.txt"
+          token = os.environ["SONAR_TOKEN"]
+          report_file = ".scannerwork/report-task.txt"
 
-          sonar_token = os.environ["SONAR_TOKEN"]
+          with open(report_file, "r", encoding="utf-8") as f:
+              props = dict(line.strip().split("=", 1) for line in f if "=" in line)
+          ce_task_url = props.get("ceTaskUrl")
+          if not ce_task_url:
+              raise SystemExit("ceTaskUrl missing in .scannerwork/report-task.txt")
 
-          # Read analysis metadata
-          try:
-              with open(METADATA_FILE, "r") as f:
-                  data = dict(line.strip().split("=", 1) for line in f if "=" in line)
-          except FileNotFoundError:
-              print("Sonar report task file not found.")
-              exit(1)
+          def get(url: str):
+              req = urllib.request.Request(url)
+              auth = base64.b64encode((token + ":").encode()).decode()
+              req.add_header("Authorization", "Basic " + auth)
+              with urllib.request.urlopen(req) as resp:
+                  return json.loads(resp.read().decode())
 
-          task_url = data.get("ceTaskUrl")
-          if not task_url:
-              print("Checking status failed: ceTaskUrl is missing.")
-              exit(1)
-
-          def make_request(url):
-              request = urllib.request.Request(url)
-              auth_header = base64.b64encode(f"{sonar_token}:".encode()).decode()
-              request.add_header("Authorization", f"Basic {auth_header}")
-              with urllib.request.urlopen(request) as response:
-                  return json.loads(response.read().decode())
-
-          # Poll for task completion
           analysis_id = None
-          for attempt in range(MAX_RETRIES):
-              res = make_request(task_url)
-              task_status = res["task"]["status"]
-              print(f"Analysis Status: {task_status}")
-              
-              if task_status == "SUCCESS":
-                  analysis_id = res["task"].get("analysisId")
+          for _ in range(60):  # up to ~5 minutes
+              data = get(ce_task_url)
+              status = data["task"]["status"]
+              print("Sonar CE status:", status)
+              if status == "SUCCESS":
+                  analysis_id = data["task"].get("analysisId")
                   break
-              elif task_status in ["FAILED", "CANCELED"]:
-                  print("Analysis failed or was canceled.")
-                  exit(1)
-              
-              time.sleep(SLEEP_TIME)
+              if status in ("PENDING", "IN_PROGRESS"):
+                  time.sleep(5)
+                  continue
+              raise SystemExit(f"Unexpected Sonar CE status: {status}")
 
           if not analysis_id:
-              print(f"Analysis did not complete within {MAX_RETRIES * SLEEP_TIME} seconds.")
-              exit(1)
+              raise SystemExit("analysisId not found; Sonar task may not have finished")
 
-          # Check Quality Gate
-          gate_res = make_request(f"https://sonarcloud.io/api/qualitygates/project_status?analysisId={analysis_id}")
-          gate_status = gate_res["projectStatus"]["status"]
-
-          print(f"Quality Gate Status: {gate_status}")
-
-          if gate_status != "OK":
-              print("Quality gate validation failed.")
-              exit(1)
-          '
+          qg = get(f"https://sonarcloud.io/api/qualitygates/project_status?analysisId={analysis_id}")
+          qg_status = qg["projectStatus"]["status"]
+          print("Quality Gate:", qg_status)
+          if qg_status != "OK":
+              raise SystemExit("Quality Gate failed")
+          PY
