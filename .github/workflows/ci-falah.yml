@@ -13,7 +13,6 @@ permissions:
 jobs:
   verification:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
